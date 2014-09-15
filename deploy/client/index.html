@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>client</title>
+
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=1.0">
+
+	<style>
+		#recordingWrapper{
+			border: 1px solid silver;
+			padding: 5px;
+		}
+		.micRecBtn{
+			width: 20px;
+			height: 20px;
+			background: red;
+			border-radius: 10px;
+
+		}
+
+		#recordingWrapper .content{
+			width: 100%;
+			height: 200px;
+		}
+		.waveformVisual{
+			height: 100%;
+			width: 100%;
+		}
+
+		.sendRec{
+			display: block;
+			margin-bottom: 10px;	
+		}
+
+
+
+	</style>
+	<script>
+		var remote, conn;
+		var touchLayerEl = null;
+		var moveObj = {x: 0, y: 0, id: undefined, type: 'pos'}
+
+		var calcDim = {x: 1, y:1};
+
+		// var sequencerUI = null;
+		var sequencers = [];
+
+		var connections = [];
+
+		var micNode = null;
+		var audioCtx = null;
+
+		var isConnected = false;
+
+		
+
+		
+		function init(){
+
+			remote = new Peer({key: 'ar7i1c7yhhyqfr', debug:true});
+			// remote = new Peer({host: '192.168.56.103', port: 9000, debug:true});
+
+			audioCtx = new webkitAudioContext();
+			micNode = new MicInNode();
+			micNode.setup(audioCtx, document.getElementById('recordingWrapper'));
+
+			var micOutNode = micNode.getOutNode();
+			micOutNode.connect(audioCtx.destination);
+
+			
+
+			update();
+			remote.on('error', function(err){
+
+				console.log(err);
+			});
+
+			remote.on('open', function() {
+
+				console.log('remote opened !');
+			});
+
+			remote.on('data', function(){
+
+				debugger;
+			});
+
+			
+		};
+
+		function newBeat(){
+
+			var id = new Date().getTime();
+
+			var obj = {id: id, type: 'newBeat'};
+
+			conn.send(obj);
+
+			var sequencerUI = new SequencerUI();
+			sequencerUI.setup(id);
+			sequencers.push(sequencerUI);
+		};
+
+		function call(){
+
+			var mediaConn = remote.call('localID', micNode.stream);
+
+			mediaConn.on('error', function(err){
+
+				console.log(err);
+			});
+
+			mediaConn.on('stream', function(){
+
+				debugger;
+			});
+
+		};
+
+		function connect(){
+
+			if (isConnected) return;
+
+			conn = remote.connect('localID');
+			console.log("REMOTE connecting to LOCAL", conn);
+
+			conn.on('open', function(){
+				console.log("connect to REMOTE opened", conn);
+				// conn.send('hi!');
+				var statusText = document.getElementById('statusText');
+				statusText.innerHTML = 'Connected';
+
+				isConnected = true;
+
+				// moveObj.id = remote.id;
+				// var id = new Date().getTime();
+				
+				// var dimObj = {w: document.documentElement.clientWidth, h: document.documentElement.clientHeight, id: id, type: 'initDim'};
+				// setCalcDims(dimObj);
+
+				// conn.send(dimObj);
+
+				// var sequencerUI = new SequencerUI();
+				// sequencerUI.setup(conn.id);
+				// sequencers.push(sequencerUI);
+			
+				
+
+
+
+			  
+			});
+
+
+		};
+		
+
+		function sendObj(){
+
+			conn.send(moveObj);
+		};
+
+		function sendRecording(){
+
+			// debugger;
+
+			var id = new Date().getTime();
+
+		
+			var buff = micNode.getLatestRecordBuffer();
+			var obj = {buff: buff, type: 'newRecording', id: id};
+
+			conn.send(obj);
+
+			var sequencerUI = new SequencerUI();
+			sequencerUI.setup(id);
+			sequencers.push(sequencerUI);
+		
+		};
+
+		window.sendNoteReg = function(index, id){
+
+			var obj = {index: index, id: id, type: 'noteUpdate'};
+			conn.send(obj);
+		};
+
+		
+
+		function initTouchLayer(){
+
+			var height = document.documentElement.clientHeight;
+			var width = document.documentElement.clientWidth;
+
+			touchLayerEl = document.getElementById('touchLayer');
+			touchLayerEl.style.height = height + 'px';
+			touchLayerEl.style.width = width + 'px';
+
+			touchLayerEl.addEventListener('mousemove', onMouseMove);
+			touchLayerEl.addEventListener('touchmove', onMouseMove);
+		};
+
+		function onMouseMove(e){
+
+			e.preventDefault();
+
+			var obj = e;
+
+			if (e.touches){
+				obj = e.touches[0];
+				moveObj.x = obj.screenX;
+				moveObj.y = obj.screenY;
+			}else{
+				moveObj.x = obj.x;
+				moveObj.y = obj.y;
+			}
+				
+			sendObj();
+		};
+
+		function update(){
+
+			for (var i=0;i<sequencers.length;i++){
+				var s = sequencers[i];
+				s.update();
+			}
+
+			micNode.updateVisuals();
+			
+
+			window.requestAnimationFrame(update);
+
+		};
+
+
+
+	</script>
+	<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+	<!--<script src="js/peer.js"></script>
+	<script src="http://cdn.peerjs.com/0.2.8/peer.js"></script>
+	<script src="js/peer_old.js"></script>-->
+	<script src="js/Countdown.js"></script>
+	<script src="js/RecordBufferItem.js"></script>
+	<script src="js/RecordNode.js"></script>
+	<script src="js/WaveformAnalyser.js"></script>
+	<script src="js/MicInNode.js"></script>
+	<script src="js/SequencerUI.js"></script>
+<body onload="init()">
+
+	<div id="wrapper"><h1>Client</h1><h2 id="statusText">Not Connected !</h2></div>
+	<button onclick="connect()">Connect</button>
+	<button onclick="newBeat()">New Beat</button>
+	<button onclick="call()">call</button>
+
+	<!-- <div id="touchLayer" style="position:absolute; top:0; left:0"></div> -->
+	<div id="sequencerUI"></div>
+	<div id="recordingWrapper">
+		<h2>Record</h2>
+		<button onclick="sendRecording()" class="sendRec">Send new recording</button>
+		<button class="micRecBtn"></button>
+		<div class="content">
+			
+			<div class="waveformVisual"></div>
+		</div>
+		<canvas id="countdown"></canvas>
+		<h2 id="recordingNotice"></h2>
+	</div>
+	
+
+	
+</body>
+</html>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>server</title>
+
+	<style>
+		#drawingBoard{
+			z-index: 0;
+		}
+		#mixerWrapper{
+			z-index: 1;
+			position: relative;
+		}
+		.sequencer .content{
+
+		}
+
+		.sequencer .recordedAudioBlock{
+
+			margin: 10px auto;
+		}
+
+		.recordedAudioBlock .soundwaveBuffer{
+			margin-bottom: 20px;
+		}
+
+		.recordedAudioBlock .fxControlWrapper{
+			width: 200px;
+			/*height: 20px;*/
+			/*background: rgba(102,184,122,1);*/
+			float: left;
+			margin-right: 30px;
+			margin-top: 40px;
+		}
+
+		.recordedAudioBlock .fxControlWrapper .title{
+			color: white
+		}
+
+		.recordedAudioBlock .fxControl{
+			width: 200px;
+			height: 20px;
+			background: rgba(102,184,122,1);
+		}
+
+		#inputWaveform{
+			height: 100px;
+			width: 100%;
+			background: black;
+		}
+	</style>
+
+
+	<script>
+
+		var connections = [];
+		var canvasEl = null;
+		var ctx = null;
+		var boxVars = {w: 3, h: 3, x: 100, y: 100}
+
+		var boxes = [];
+
+		var mixer = null;
+
+		var audioCtx = null;
+
+		var waveformVisual = null;
+		
+		function init(){
+
+			var nrConnectionsEl = document.getElementById('nrConnections');
+			
+			audioCtx = new webkitAudioContext();
+
+			var local = new Peer('localID', {key: 'ar7i1c7yhhyqfr'});
+			// var local = new Peer('localID', {host: '192.168.56.103', port: 9000, debug: true});
+
+			local.on('call', function(mediaConn){
+
+				mediaConn.answer();
+
+				mediaConn.on('stream', function(clientIn){
+
+
+
+					
+					var clientInNode = audioCtx.createMediaStreamSource(clientIn);
+					// clientInNode.connect(audioCtx.destination);
+				
+
+					waveformVisual = new WaveformAnalyser();
+					waveformVisual.setup(audioCtx, document.getElementById('inputWaveform'), 256);
+					waveformVisual.connect(clientInNode);
+
+					clientInNode.connect(audioCtx.destination);
+				});
+			});
+
+			local.on('error', function(err){
+
+				console.log(err);
+			});
+
+			local.on('connection', function(conn) {
+				console.log("LOCAL connection open", conn);
+				connections.push(conn);
+				nrConnectionsEl.innerHTML = connections.length;
+
+				console.log('server id:',conn.id);
+				console.log('server peer:',conn.peer);
+
+				// mixer.createPlaybackItem(conn.id, false);
+				
+				var box = {w: 3, h: 3, x: 100, y: 100, id: conn.peer, calcX: 1, calcY: 1};
+				boxes.push(box);
+				conn.on('data', function(data){        
+					if (data.type == 'pos'){
+				  		var boxToUpdate = getBox(data.id);
+						boxToUpdate.x = data.x;
+						boxToUpdate.y = data.y;
+					}else if (data.type == 'initDim'){
+						setCalcDims(data);
+					}else if (data.type == 'noteUpdate'){
+						updateNotes(data);
+					}else if (data.type == 'newRecording'){
+						var holder = [];
+						var left = new Float32Array(data.buff[0]);
+						var right = new Float32Array(data.buff[1]);
+						holder = [left, right];
+						mixer.createPlaybackItem(data.id, true, holder);
+					}else if (data.type == 'newBeat'){
+						mixer.createPlaybackItem(data.id, false);
+					}
+				});
+
+
+			});
+
+			mixer = new Mixer();
+			mixer.setup(audioCtx, document.getElementById('mixerWrapper'));
+
+			initCanvas();
+			update();
+
+			
+		
+		};
+
+		function updateNotes(data){
+
+			mixer.updateNotes(data);
+		};
+
+		function setCalcDims(data){
+
+			var sW = document.documentElement.clientWidth;
+			var sH = document.documentElement.clientHeight;
+
+			var tW = data.w;
+			var tH = data.h;
+
+			var box = getBox(data.id);
+			box.calcX = sW/tW;
+			box.calcY = sH/tH;
+
+			// console.log(box.calcX);
+
+		};
+
+		function getBox(id){
+
+			for (var i=0;i<boxes.length;i++){
+				var box = boxes[i];
+				if (box.id == id) return box;
+			}	
+		};
+
+		function initCanvas(){
+
+			var height = document.documentElement.clientHeight;
+			var width = document.documentElement.clientWidth;
+
+			canvasEl = document.getElementById('drawingBoard');
+			canvasEl.style.position = 'absolute';
+			canvasEl.style.top = 0;
+			canvasEl.style.left = 0;
+
+			canvasEl.width = width;
+			canvasEl.height = height;
+
+			ctx = canvasEl.getContext('2d');
+
+		};
+
+		function update(){
+
+			// ctx.clearRect(0,0,canvasEl.width, canvasEl.height);
+
+			
+			for (var i=0;i<boxes.length;i++){
+				var box = boxes[i];
+				ctx.beginPath();
+				ctx.rect(box.x*box.calcX, box.y*box.calcY, box.w, box.h);
+				if (i == 0){
+					ctx.strokeStyle = 'red';
+					ctx.fillStyle = 'red';
+				} 
+				else{
+					ctx.strokeStyle = 'black';
+					ctx.fillStyle = 'black';
+				} 
+				ctx.lineWidth = 3;
+
+				ctx.stroke();
+				
+				ctx.fill();
+			}
+
+			mixer.update();
+
+			if (waveformVisual !== null){
+				waveformVisual.update();
+				waveformVisual.render();
+			}
+			
+
+			window.requestAnimationFrame(update);
+		};
+
+		
+		
+
+		
+	</script>
+	<script src="http://cdn.peerjs.com/0.3/peer.js"></script>
+	<!--<script src="http://cdn.peerjs.com/0.2.8/peer.js"></script>
+	<script src="http://cdn.peerjs.com/0.2.8/peer.js"></script>
+	<script src="js/peer_old.js"></script>-->
+	<script src="js/WaveformAnalyser.js"></script>
+	<script src="js/EffectNode.js"></script>
+	<script src="js/PlaybackItem.js"></script>
+	<script src="js/Sequencer.js"></script>
+	<script src="js/Mixer.js"></script>
+<body onload="init()">
+	<div id="wrapper"><h2 id="nrConnections">0</h2></div>
+	<canvas id="drawingBoard"></canvas>
+	<div id="mixerWrapper">
+		<div class="sequencer">
+			<div class="content"></div>
+		</div>
+	</div>
+	<video id="video"></video>
+	<div id="inputWaveform"></div>
+</body>
+</html>
